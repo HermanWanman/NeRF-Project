@@ -35,32 +35,32 @@ class NerfModel(nn.Module):
         self.embedding_dim_direction = embedding_dim_direction
         self.relu = nn.ReLU() # This i realy don't understand why we save, is it because we want the ReLU-function to be easier to use????
 
-        @staticmethod   # I think this function is made because neural networks makes it so that high frequency of color and geometry changes tends to be lower than desired if
-                        # the input is only our 3d-positioning and 2d-viewing direction. To combat this we, somewhat artificially, increase the dimension with every value in the position and direction
-                        # through the formula sin(2^(j)*pi*p), cos(2^(j)*pi*p) where j = {0,1,2, ... L-1} and L = "half of the dimensional space we map the inputs to"
-                        # This function maps 3d-input to a 63d-feature vector and 2d-input to a 24d-feature vector
-                        # Seen in section 5.1 in the paper
-        def positional_encoding(x, L):
-            out = [x]
-            for j in range(L):
-                out.append(torch.sin(2 ** j * x))
-                out.append(torch.cos(2 ** j * x))
-            return torch.cat(out, dim=1)
-        
-        def forward(self, o, d):
-            emb_x = self.positional_encoding(o, self.embedding_dim_pos) # we embedd the position which means we transform it as described above
-            emb_d = self.positional_encoding(d, self.embedding_dim_direction) # we embedd the direction which means we transform it as described above
-            h = self.block1(emb_x) # compute the first part of the desity calculation
-            tmp = self.block2(torch.cat((h,emb_x), dim=1))  # this line calculates the second part of the density calculation on the concatenated 
-                                                            # (stacked horizontally aka values on row 1 in h and the values on row 1 in emb_x are all in row 1 in the concatenated matrix) values of the 
-                                                            # last post-activation values from block1 and the encoded positional input
+    @staticmethod   # I think this function is made because neural networks makes it so that high frequency of color and geometry changes tends to be lower than desired if
+                    # the input is only our 3d-positioning and 2d-viewing direction. To combat this we, somewhat artificially, increase the dimension with every value in the position and direction
+                    # through the formula sin(2^(j)*pi*p), cos(2^(j)*pi*p) where j = {0,1,2, ... L-1} and L = "half of the dimensional space we map the inputs to"
+                    # This function maps 3d-input to a 63d-feature vector and 2d-input to a 24d-feature vector
+                    # Seen in section 5.1 in the paper
+    def positional_encoding(x, L):
+        out = [x]
+        for j in range(L):
+            out.append(torch.sin(2 ** j * x))
+            out.append(torch.cos(2 ** j * x))
+        return torch.cat(out, dim=1)
+    
+    def forward(self, o, d):
+        emb_x = self.positional_encoding(o, self.embedding_dim_pos) # we embedd the position which means we transform it as described above
+        emb_d = self.positional_encoding(d, self.embedding_dim_direction) # we embedd the direction which means we transform it as described above
+        h = self.block1(emb_x) # compute the first part of the desity calculation
+        tmp = self.block2(torch.cat((h,emb_x), dim=1))  # this line calculates the second part of the density calculation on the concatenated 
+                                                        # (stacked horizontally aka values on row 1 in h and the values on row 1 in emb_x are all in row 1 in the concatenated matrix) values of the 
+                                                        # last post-activation values from block1 and the encoded positional input
 
-            h,sigma = tmp[:,:-1], self.relu(tmp[:,-1])      # takes the reversed preactivations of the block2-output which represents the density and inputs it into h for the next block
-                                                            # it also alctivates the density and saves it into the sigma-variable
-            h = self.block3(torch.cat((h, emb_d), dim=1))   # uses the preactivations from the line above with the addition of the direction to run the next part of the nn
-            c = self.block4(h)                              # converts the new h-values into the 3-d RGB-value
-            return c, sigma                                 # returns the RGB-color-value and the density
-        
+        h,sigma = tmp[:,:-1], self.relu(tmp[:,-1])      # takes the reversed preactivations of the block2-output which represents the density and inputs it into h for the next block
+                                                        # it also alctivates the density and saves it into the sigma-variable
+        h = self.block3(torch.cat((h, emb_d), dim=1))   # uses the preactivations from the line above with the addition of the direction to run the next part of the nn
+        c = self.block4(h)                              # converts the new h-values into the 3-d RGB-value
+        return c, sigma                                 # returns the RGB-color-value and the density
+    
 
 def compute_accumulated_transmittance(alphas):  # implementing the part of formula (3) on page 6 in the paper that calculates the T_i-value or the accumulated transmittance
                                                 # Formula (3) calculates the ray traced through each pixel for our view (or virtual camera) little bit unsure about details here
@@ -97,7 +97,7 @@ def render_rays(nerf_model, ray_origins, ray_directions,hn=0, hf=0.5, nb_bins=19
     return c + 1 - weight_sum.unsqueeze(-1) # + 1 - weight_sum.unsqueeze(-1) assumes we have a white background and makes it so
 
 # Here we make our training function that does supervised learning by using the 2d pictures in the training data to know what color the ray is supposed to be in order to train the model
-def train(nerf_model, optimizer, scheduler,testing_dataset, data_loader, device='cpu', hn=0, hf=1, nb_epochs=int(1e5), nb_bins=192, H=400, W=400):
+def train(nerf_model, optimizer, scheduler,testing_dataset, data_loader, device='cuda', hn=0, hf=1, nb_epochs=int(1e5), nb_bins=192, H=400, W=400):
     training_loss = []
     for _ in tqdm(range(nb_epochs)): #iterate over the epochs
         for batch in data_loader: # iterate over the data in our dataloader
@@ -124,7 +124,7 @@ def train(nerf_model, optimizer, scheduler,testing_dataset, data_loader, device=
     return training_loss
 
 @torch.no_grad()
-def test(hn, hf, dataset, chunck_size=10, img_index=0, nb_bins=192, H=400, W=400, device='cpu'):
+def test(hn, hf, dataset, chunck_size=10, img_index=0, nb_bins=192, H=400, W=400, device='cuda'):
     ray_origins = dataset[img_index * H * W: (img_index + 1) * H * W, :3]
     ray_directions = dataset[img_index *H * W: (img_index + 1) * H * W, 3:6]
 
@@ -152,5 +152,5 @@ if __name__ == '__main__':
     scheduler = torch.optim.lr_scheduler.MultiStepLR(model_optimizer, milestones= [2, 4, 8], gamma=0.5) 
 
     data_loader = DataLoader(training_dataset, batch_size=1024, shuffle=True) 
-    train(model, model_optimizer, scheduler, data_loader, nb_epochs=16, device=device, hn=2, hf=6, nb_bins=192, H=400, W=400)
+    train(model, model_optimizer, scheduler,testing_dataset, data_loader, nb_epochs=16, device=device, hn=2, hf=6, nb_bins=192, H=400, W=400)
     
