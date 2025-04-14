@@ -77,8 +77,8 @@ def render_rays(nerf_model, ray_origins, ray_directions,hn=0, hf=0.5, nb_bins=19
     mid = (t[:,:-1] + t[:,1:])/ 2. # don't understand
     lower = torch.cat((t[:,:1], mid), -1) # don't understand
     upper = torch.cat((mid, t[:,-1:]), -1) # don't understand
-    u = torch.rand(t.shape, device=device) # don't understand
-    t = lower + (upper - lower) * u # size [batch_size, nb_bins] no clue what is going on here
+    u = torch.rand(t.shape, device=device) # calculate u-value for raytracing
+    t = lower + (upper - lower) * u # size [batch_size, nb_bins] standard t-value for ray tracing
 
     delta = torch.cat((t[:,1:] - t[:,:-1], torch.tensor([1e10], device=device).expand(ray_origins.shape[0], 1)), -1) # calculates the width of each bin (or part of the sum to approximate the integral)
     x = ray_origins.unsqueeze(1) + t.unsqueeze(2) * ray_directions.unsqueeze(1) # the position of a ray at time t is the origin + t*direction
@@ -97,7 +97,7 @@ def render_rays(nerf_model, ray_origins, ray_directions,hn=0, hf=0.5, nb_bins=19
     return c + 1 - weight_sum.unsqueeze(-1) # + 1 - weight_sum.unsqueeze(-1) assumes we have a white background and makes it so
 
 # Here we make our training function that does supervised learning by using the 2d pictures in the training data to know what color the ray is supposed to be in order to train the model
-def train(nerf_model, optimizer, scheduler, data_loader, device='cpu', hn=0, hf=1, nb_epochs=int(1e5), nb_bins=192, H=400, W=400):
+def train(nerf_model, optimizer, scheduler,testing_dataset, data_loader, device='cpu', hn=0, hf=1, nb_epochs=int(1e5), nb_bins=192, H=400, W=400):
     training_loss = []
     for _ in tqdm(range(nb_epochs)): #iterate over the epochs
         for batch in data_loader: # iterate over the data in our dataloader
@@ -114,7 +114,7 @@ def train(nerf_model, optimizer, scheduler, data_loader, device='cpu', hn=0, hf=
             loss.backward()
             optimizer.step()
             training_loss.append(loss.item())
-        scheduler.step() # this mechanism is used to refine details at the end of training since NeRF usually converges fast to the shape but the detalis are helped by the scheduler (don't know how/why)
+        scheduler.step() # this mechanism is used to refine details at the end of training since NeRF usually converges fast to the shape but the detalis are helped by the scheduler TODO (don't know how/why)
 
 
         # after each epoch we test the model but since testing takes a while with NeRF we don't test the whole dataset we only test a few values
@@ -124,7 +124,7 @@ def train(nerf_model, optimizer, scheduler, data_loader, device='cpu', hn=0, hf=
     return training_loss
 
 @torch.no_grad()
-def test(hn, hf, dataset, chunck_size=10, img_index=0, nb_bins=192, H=400, W=400):
+def test(hn, hf, dataset, chunck_size=10, img_index=0, nb_bins=192, H=400, W=400, device='cpu'):
     ray_origins = dataset[img_index * H * W: (img_index + 1) * H * W, :3]
     ray_directions = dataset[img_index *H * W: (img_index + 1) * H * W, 3:6]
 
@@ -143,13 +143,14 @@ def test(hn, hf, dataset, chunck_size=10, img_index=0, nb_bins=192, H=400, W=400
     plt.savefig(f'novel_views/img_{img_index}.png', bbox_inches='tight')
     plt.close()
 
-if __name__ == 'main':
+if __name__ == '__main__':
     device = 'cuda'
     training_dataset = torch.from_numpy(np.load('training_data.pkl', allow_pickle=True))
     testing_dataset = torch.from_numpy(np.load('testing_data.pkl', allow_pickle=True))
     model = NerfModel(hidden_dim=256).to(device)
-    model_optimizer = torch.optim.Adam(model.parameters(), lr = 5e-4) # Adam is an optimization algorithm that can be used instead of SGD used for deep learning models
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(model_optimizer, milestones= [2, 4, 8], gamme=0.5) 
+    model_optimizer = torch.optim.Adam(model.parameters(), lr = 5e-4) # Adam is an optimization algorithm that can be used instead of SGD for deep learning models
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(model_optimizer, milestones= [2, 4, 8], gamma=0.5) 
 
     data_loader = DataLoader(training_dataset, batch_size=1024, shuffle=True) 
     train(model, model_optimizer, scheduler, data_loader, nb_epochs=16, device=device, hn=2, hf=6, nb_bins=192, H=400, W=400)
+    
