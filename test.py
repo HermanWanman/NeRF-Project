@@ -7,13 +7,13 @@ from torch.utils.data import DataLoader
 
 class NerfModel(nn.Module):
     def __init__(self, embedding_dim_pos=10, embedding_dim_direction=4, hidden_dim=128): # embedding_dim_pos (= feature dimension of the position encoding) and 
-        super(NerfModel, self).__init__()                                                # embedding_dim_direction are positional data needed for this NeRF implementation (might be required, don't know yet)
+        super(NerfModel, self).__init__()                                                # embedding_dim_direction are positional data needed for this NeRF implementation 
 
         # Block1 and block2 calculate the density (sigma) or "opaque-ness" of the "volumetric representation integral" and this is not dependent on the direction
         # that is why the direction is first used in block3 since that is where it is first needed. No need to confuse the network with data that is not important
         # this entire sequence can be seen in Fig 7 of the paper "NeRF: Representing Scenes as Neural Radiance Fields for View Synthesis"
 
-        self.block1 = nn.Sequential(nn.Linear(embedding_dim_pos * 6 + 3, hidden_dim), nn.ReLU(), # simple MLP (= Multi-Layer-Perceptron) with ReLU-activation (i don't think it has a skip-layer but i'm not sure)
+        self.block1 = nn.Sequential(nn.Linear(embedding_dim_pos * 6 + 3, hidden_dim), nn.ReLU(), # simple MLP (= Multi-Layer-Perceptron) with ReLU-activation
                                     nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
                                     nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
                                     nn.Linear(hidden_dim, hidden_dim), nn.ReLU(), )
@@ -21,21 +21,21 @@ class NerfModel(nn.Module):
         self.block2 = nn.Sequential(nn.Linear(embedding_dim_pos * 6 + hidden_dim + 3, hidden_dim), nn.ReLU(), # we add the hidden_dim and add it into this block since we also want the output from the first block
                                     nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),                             # block2 does the same as block1 but also takes the output of block1 as an input
                                     nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
-                                    nn.Linear(hidden_dim, hidden_dim + 1), )                                  # here we have an output-dimension of hidden_dim+1 because that last outout is the density that the network has 
-                                                                                                              # calculated there is also no activation for this last layer
+                                    nn.Linear(hidden_dim, hidden_dim + 1), )                                  # here we have an output-dimension of hidden_dim+1 because that last output is the density that the network has 
+                                                                                                              # calculated. There is also no activation for this last layer
         
         # The color is dependent on the direction and thus we input it into block3 along with the density (calculated by block1 and block2) which is also needed for the RGB-values
         
-        self.block3 = nn.Sequential(nn.Linear(embedding_dim_direction * 6 + hidden_dim + 3, hidden_dim // 2), nn.ReLU(), ) # here we start calculating the color to get the RGB-values to output (don't know the details)
-        self.block4 = nn.Sequential(nn.Linear(hidden_dim // 2, 3), nn.Sigmoid(), )  # here we reduce the dimension of the outputs to create the RGB-values to output (don't know how, need to read more in the paper)¨
+        self.block3 = nn.Sequential(nn.Linear(embedding_dim_direction * 6 + hidden_dim + 3, hidden_dim // 2), nn.ReLU(), ) # here we start calculating the color to get the RGB-values to output
+        self.block4 = nn.Sequential(nn.Linear(hidden_dim // 2, 3), nn.Sigmoid(), )  # here we reduce the dimension of the outputs to create the RGB-values to output
 
-        # now we save the values for the direction and the position (don't know why it is done here and not earlier or why it is needed at all)
+        # now we save the values for the direction and the position 
 
         self.embedding_dim_pos = embedding_dim_pos
         self.embedding_dim_direction = embedding_dim_direction
-        self.relu = nn.ReLU() # This i realy don't understand why we save, is it because we want the ReLU-function to be easier to use????
+        self.relu = nn.ReLU()
 
-    @staticmethod   # I think this function is made because neural networks makes it so that high frequency of color and geometry changes tends to be lower than desired if
+    @staticmethod   # This function is made because neural networks makes it so that high frequency of color and geometry changes tends to be lower than desired if
                     # the input is only our 3d-positioning and 2d-viewing direction. To combat this we, somewhat artificially, increase the dimension with every value in the position and direction
                     # through the formula sin(2^(j)*pi*p), cos(2^(j)*pi*p) where j = {0,1,2, ... L-1} and L = "half of the dimensional space we map the inputs to"
                     # This function maps 3d-input to a 63d-feature vector and 2d-input to a 24d-feature vector
@@ -56,14 +56,14 @@ class NerfModel(nn.Module):
                                                         # last post-activation values from block1 and the encoded positional input
 
         h,sigma = tmp[:,:-1], self.relu(tmp[:,-1])      # takes the reversed preactivations of the block2-output which represents the density and inputs it into h for the next block
-                                                        # it also alctivates the density and saves it into the sigma-variable
+                                                        # it also activates the density and saves it into the sigma-variable
         h = self.block3(torch.cat((h, emb_d), dim=1))   # uses the preactivations from the line above with the addition of the direction to run the next part of the nn
-        c = self.block4(h)                              # converts the new h-values into the 3-d RGB-value
+        c = self.block4(h)                              # converts the new h-values into the 3d RGB-value
         return c, sigma                                 # returns the RGB-color-value and the density
     
 
 def compute_accumulated_transmittance(alphas):  # implementing the part of formula (3) on page 6 in the paper that calculates the T_i-value or the accumulated transmittance
-                                                # Formula (3) calculates the ray traced through each pixel for our view (or virtual camera) little bit unsure about details here
+                                                # Formula (3) calculates the ray traced through each pixel for our view (or pinhole camera) 
     accumulated_transmittance = torch.cumprod(alphas, 1)
     return torch.cat((torch.ones((accumulated_transmittance.shape[0], 1), device=alphas.device), 
                         accumulated_transmittance[:, :-1]), dim=1)
@@ -114,7 +114,7 @@ def train(nerf_model, optimizer, scheduler,testing_dataset, data_loader, device=
             loss.backward()
             optimizer.step()
             training_loss.append(loss.item())
-        scheduler.step() # this mechanism is used to refine details at the end of training since NeRF usually converges fast to the shape but the detalis are helped by the scheduler TODO (don't know how/why)
+        scheduler.step() # this mechanism is used to refine details at the end of training since NeRF usually converges fast to the shape but the detalis are helped by not letting it converge to early which is done by the scheduler
 
 
         # after each epoch we test the model but since testing takes a while with NeRF we don't test the whole dataset we only test a few values
