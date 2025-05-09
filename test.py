@@ -63,7 +63,7 @@ class NerfModel(nn.Module):
     
 
 def compute_accumulated_transmittance(alphas):  # implementing the part of formula (3) on page 6 in the paper that calculates the T_i-value or the accumulated transmittance
-                                                # Formula (3) calculates the ray traced through each pixel for our view (or pinhole camera) 
+                                                # Formula (3) calculates the ray traced through each pixel for our view (using the pinhole camera rendering technique) 
     accumulated_transmittance = torch.cumprod(alphas, 1)
     return torch.cat((torch.ones((accumulated_transmittance.shape[0], 1), device=alphas.device), 
                         accumulated_transmittance[:, :-1]), dim=1)
@@ -74,9 +74,9 @@ def compute_accumulated_transmittance(alphas):  # implementing the part of formu
 def render_rays(nerf_model, ray_origins, ray_directions,hn=0, hf=0.5, nb_bins=192): #nb_bins = the number of sums used to approximate the integration
     device = ray_origins.device
     t = torch.linspace(hn, hf, nb_bins, device=device).expand(ray_origins.shape[0], nb_bins) # we sample t between the points hn and hf to be used for getting x-values along the ray
-    mid = (t[:,:-1] + t[:,1:])/ 2. # don't understand
-    lower = torch.cat((t[:,:1], mid), -1) # don't understand
-    upper = torch.cat((mid, t[:,-1:]), -1) # don't understand
+    mid = (t[:,:-1] + t[:,1:])/ 2. # calculate the middle of the screen
+    lower = torch.cat((t[:,:1], mid), -1) # calculate the lower bound of the screen
+    upper = torch.cat((mid, t[:,-1:]), -1) # calculate the upper bound of the screen
     u = torch.rand(t.shape, device=device) # calculate u-value for raytracing
     t = lower + (upper - lower) * u # size [batch_size, nb_bins] standard t-value for ray tracing
 
